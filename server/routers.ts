@@ -33,14 +33,26 @@ export const appRouter = router({
     liveOverview: adminProcedure.query(async () => {
       const activities = await listRecentStudentActivities();
       const latestByStudent = new Map<string, typeof activities[number]>();
+      const quizHistoryByStudent = new Map<string, typeof activities>();
       activities.forEach((activity) => {
         const key = `${activity.studentName}::${activity.className}`;
         if (!latestByStudent.has(key)) latestByStudent.set(key, activity);
+        if (activity.activityType === "quiz" && activity.score !== null) {
+          const history = quizHistoryByStudent.get(key) ?? [];
+          history.push(activity);
+          quizHistoryByStudent.set(key, history);
+        }
       });
       const cutoff = Date.now() - 45_000;
-      const students = Array.from(latestByStudent.values()).map((activity) => ({
+      const students = Array.from(latestByStudent.entries()).map(([key, activity]) => ({
         ...activity,
         isOnline: new Date(activity.lastSeenAt).getTime() >= cutoff ? 1 : 0,
+        quizHistory: (quizHistoryByStudent.get(key) ?? []).slice(0, 20).map((quiz) => ({
+          id: quiz.id,
+          score: quiz.score,
+          activityLabel: quiz.activityLabel,
+          completedAt: quiz.createdAt,
+        })),
       }));
       return {
         students,
