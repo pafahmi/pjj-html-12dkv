@@ -11,6 +11,7 @@ import {
   Clock3,
   Code2,
   Copy,
+  Download,
   ExternalLink,
   Eye,
   FileCode2,
@@ -181,6 +182,93 @@ const starterCode = `<!doctype html>
 </body>
 </html>`;
 
+function escapePdfText(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function wrapPdfText(value: string, maxChars = 92) {
+  const lines: string[] = [];
+  value.split("\\n").forEach((rawLine) => {
+    const line = rawLine.replace(/\t/g, "  ");
+    if (!line) {
+      lines.push("");
+      return;
+    }
+    for (let index = 0; index < line.length; index += maxChars) {
+      lines.push(line.slice(index, index + maxChars));
+    }
+  });
+  return lines;
+}
+
+function downloadTextPdf(filename: string, title: string, sections: { heading: string; body: string }[]) {
+  const pages: string[][] = [];
+  let currentPage: string[] = [];
+  const pushLine = (line: string) => {
+    if (currentPage.length >= 45) {
+      pages.push(currentPage);
+      currentPage = [];
+    }
+    currentPage.push(line);
+  };
+
+  pushLine(title);
+  pushLine("MarkupLab / PJJ HTML Interaktif XII DKV");
+  pushLine("============================================================");
+  pushLine("");
+  sections.forEach((section) => {
+    pushLine(section.heading.toUpperCase());
+    pushLine("------------------------------------------------------------");
+    wrapPdfText(section.body).forEach(pushLine);
+    pushLine("");
+  });
+  if (currentPage.length) pages.push(currentPage);
+
+  const objects: string[] = [];
+  const addObject = (body: string) => {
+    objects.push(body);
+    return objects.length;
+  };
+  const catalogId = addObject("");
+  const pagesId = addObject("");
+  const fontId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const pageIds: number[] = [];
+
+  pages.forEach((pageLines) => {
+    const commands = ["BT", "/F1 10 Tf", "50 760 Td", "14 TL"];
+    pageLines.forEach((line, index) => {
+      const size = index === 0 ? 15 : index === 1 ? 9 : 10;
+      if (index === 0) commands.push(`/F1 ${size} Tf`);
+      commands.push(`(${escapePdfText(line)}) Tj`, "0 -14 Td");
+    });
+    commands.push("ET");
+    const stream = commands.join("\n");
+    const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    const pageId = addObject(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+    pageIds.push(pageId);
+  });
+
+  objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`;
+  objects[catalogId - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => { pdf += `${String(offset).padStart(10, "0")} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  const blob = new Blob([pdf], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 function SectionLabel({ children, tone = "lime" }: { children: React.ReactNode; tone?: string }) {
   return <div className={`section-label ${tone}`}><span className="section-dot" />{children}</div>;
 }
@@ -242,6 +330,27 @@ export default function Home() {
   const resetCode = () => {
     setCode(starterCode);
     setToast("Template sandbox dikembalikan ke awal.");
+  };
+
+  const downloadSandboxPdf = () => {
+    downloadTextPdf("markup-lab-kode-sandbox.pdf", "HASIL PRAKTIK HTML SANDBOX", [
+      { heading: "Catatan praktik", body: "Kode berikut adalah snapshot dari editor HTML saat tombol unduh ditekan. Gunakan sebagai lampiran laporan PJJ atau arsip portofolio." },
+      { heading: "Kode HTML", body: code },
+    ]);
+    setToast("PDF kode sandbox sedang diunduh.");
+  };
+
+  const downloadQuizPdf = () => {
+    const answerSummary = quizData.map((question, index) => {
+      const answer = quizAnswers[index];
+      const status = answer === question[2] ? "BENAR" : answer === undefined ? "KOSONG" : "KURANG TEPAT";
+      return `${String(index + 1).padStart(2, "0")}. ${status} — Jawaban benar: ${question[1][question[2]]}`;
+    }).join("\n");
+    downloadTextPdf("markup-lab-hasil-kuis.pdf", "HASIL KUIS FORMATIF HTML", [
+      { heading: "Ringkasan nilai", body: quizSubmitted ? `Skor akhir: ${score}/100. Terima kasih sudah menyelesaikan evaluasi pembelajaran.` : "Kuis belum dikirim. File ini berisi status jawaban sementara." },
+      { heading: "Rekap jawaban", body: answerSummary },
+    ]);
+    setToast("PDF hasil kuis sedang diunduh.");
   };
 
   return (
@@ -319,15 +428,15 @@ export default function Home() {
         <section id="sandbox" className="section-block container sandbox-section">
           <div className="sandbox-banner"><div><SectionLabel tone="lime">PRAKTIK / LIVE HTML SANDBOX</SectionLabel><h2>Rakit. Ubah. <span>Lihat.</span></h2><p>Ubah kode di kiri, lalu amati dampaknya di preview kanan. Tidak perlu takut salah—eksperimen adalah bagian dari desain.</p></div><div className="sandbox-badge"><Zap size={16} /> LIVE PREVIEW</div></div>
           <div className="sandbox-workspace">
-            <div className="editor-pane"><div className="pane-head"><span><span className="pane-dot purple" /> editor.html</span><div><button onClick={copyCode} title="Salin kode"><Copy size={14} /></button><button onClick={resetCode} title="Reset template"><RotateCcw size={14} /></button></div></div><textarea value={code} onChange={(event) => setCode(event.target.value)} spellCheck={false} aria-label="Editor kode HTML" /></div>
+            <div className="editor-pane"><div className="pane-head"><span><span className="pane-dot purple" /> editor.html</span><div><button onClick={copyCode} title="Salin kode"><Copy size={14} /></button><button onClick={resetCode} title="Reset template"><RotateCcw size={14} /></button><button onClick={downloadSandboxPdf} title="Unduh kode sebagai PDF"><Download size={14} /></button></div></div><textarea value={code} onChange={(event) => setCode(event.target.value)} spellCheck={false} aria-label="Editor kode HTML" /></div>
             <div className="preview-pane"><div className="pane-head"><span><span className="pane-dot green" /> preview / browser</span><span className="preview-live"><span /> updating</span></div><div className="browser-chrome"><span className="browser-dots"><i /><i /><i /></span><span className="browser-url"><span>⌕</span> localhost / portfolio.html</span><ExternalLink size={13} /></div><iframe title="Preview HTML live" srcDoc={code} sandbox="allow-scripts" /></div>
           </div>
-          <div className="sandbox-foot"><span><MonitorPlay size={15} /> Coba ubah teks judul, warna, atau tambah satu baris tabel.</span><button onClick={() => scrollTo("kuis")}>Selesai praktik? Ke kuis <ArrowRight size={15} /></button></div>
+          <div className="sandbox-foot"><span><MonitorPlay size={15} /> Coba ubah teks judul, warna, atau tambah satu baris tabel.</span><div className="sandbox-foot-actions"><button onClick={downloadSandboxPdf}><Download size={14} /> Unduh kode PDF</button><button onClick={() => scrollTo("kuis")}>Selesai praktik? Ke kuis <ArrowRight size={15} /></button></div></div>
         </section>
 
         <section id="kuis" className="section-block container quiz-section">
           <div className="section-heading split-heading"><div><SectionLabel tone="pink">CEK PEMAHAMAN</SectionLabel><h2>Uji diri, <br /><span>tanpa menghakimi.</span></h2></div><p>Sepuluh pertanyaan singkat untuk mengunci konsep. Nilai muncul setelah semua jawaban dikirim.</p></div>
-          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 10 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div></div><div className="quiz-grid">{quizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question[2] ? "correct" : "incorrect") : ""}`} key={index}><legend><span>0{index + 1}</span>{question[0]}</legend><div className="answer-options">{question[1].map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question[2] ? <><CheckCircle2 size={14} /> Benar — {question[3]}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question[1][question[2]]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 10 dijawab</span><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 10) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div>
+          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 10 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div></div><div className="quiz-grid">{quizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question[2] ? "correct" : "incorrect") : ""}`} key={index}><legend><span>0{index + 1}</span>{question[0]}</legend><div className="answer-options">{question[1].map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question[2] ? <><CheckCircle2 size={14} /> Benar — {question[3]}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question[1][question[2]]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 10 dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 10) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div></div>
         </section>
 
         <section className="final-cta container"><div><SectionLabel tone="violet">NEXT STEP</SectionLabel><h2>Jadikan kode ini<br /><span>bagian dari portofoliomu.</span></h2></div><div className="final-cta-side"><p>Simpan hasil sandbox, tambahkan identitas visualmu, lalu teruskan eksplorasi ke CSS dan JavaScript.</p><button className="outline-button" onClick={() => scrollTo("sandbox")}>Kembali ke sandbox <ArrowUpIcon /></button></div></section>
