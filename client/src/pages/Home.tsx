@@ -276,7 +276,7 @@ function SectionLabel({ children, tone = "lime" }: { children: React.ReactNode; 
 }
 
 type StudentSession = { name: string; className: string };
-const classOptions = ["XII DKV A", "XII DKV B", "XII DKV C", "XII DKV D"];
+const classOptions = ["12 DK1", "12 DKV2", "12 DKV3"];
 
 function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void }) {
   const [name, setName] = useState("");
