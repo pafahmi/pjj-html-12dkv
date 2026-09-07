@@ -161,6 +161,7 @@ const quizData = [
   ["Tag untuk area navigasi utama halaman adalah...", ["<navigate>", "<menu>", "<nav>", "<links>"], 2, "<nav> menandai bagian yang berisi tautan navigasi."],
   ["Elemen semantik untuk konten mandiri seperti artikel adalah...", ["<article>", "<content>", "<section-text>", "<post>"], 0, "<article> cocok untuk konten mandiri yang dapat berdiri sendiri."],
   ["Atribut alt pada gambar terutama membantu...", ["mengatur ukuran", "aksesibilitas dan teks alternatif", "memutar gambar", "mengubah format"], 1, "alt membantu pembaca layar dan tampil ketika gambar gagal dimuat."],
+  ["Tag untuk menyematkan video dari file lokal adalah...", ["<movie>", "<video>", "<media>", "<source-only>"], 1, "<video> digunakan untuk memutar konten video pada halaman web."],
 ] as const;
 
 const starterCode = `<!doctype html>
@@ -296,8 +297,25 @@ function SectionLabel({ children, tone = "lime" }: { children: React.ReactNode; 
 }
 
 type StudentSession = { name: string; className: string };
+type DisplayQuestion = { prompt: string; options: string[]; correctIndex: number; explanation: string; category: string };
 type LocalExport = { filename: string; savedAt: string; name: string; className: string };
 const classOptions = ["12 DKV1", "12 DKV2", "12 DKV3"];
+const quizCategories = ["Struktur & teks", "Struktur & teks", "Struktur & teks", "Tabel", "Multimedia", "Hyperlink", "Formulir", "Formulir", "Multimedia", "Tabel", "Struktur & teks", "Hyperlink", "Multimedia", "Multimedia", "Struktur & teks", "Struktur & teks", "Formulir", "Hyperlink", "Formulir", "Formulir", "Struktur & teks", "Tabel", "Struktur & teks", "Struktur & teks", "Multimedia"];
+
+function seededHash(value: string) {
+  return Array.from(value).reduce((hash, character) => ((hash << 5) - hash + character.charCodeAt(0)) | 0, 0) >>> 0;
+}
+
+function seededShuffle<T>(items: T[], seed: number) {
+  const result = [...items];
+  let state = seed || 1;
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
 
 function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void }) {
   const [name, setName] = useState("");
@@ -331,6 +349,8 @@ export default function Home() {
   const [code, setCode] = useState(starterCode);
   const [timer, setTimer] = useState(80 * 60);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [quizTimer, setQuizTimer] = useState(30 * 60);
+  const [quizTimerRunning, setQuizTimerRunning] = useState(false);
   const [completed, setCompleted] = useState<number[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
@@ -347,10 +367,28 @@ export default function Home() {
 
   const currentModule = modules[activeModule];
   const progress = Math.round((completed.length / modules.length) * 100);
-  const score = useMemo(() => Math.round((quizData.reduce((total, question, index) => total + (quizAnswers[index] === question[2] ? 1 : 0), 0) / quizData.length) * 100), [quizAnswers]);
+  const displayQuizData = useMemo<DisplayQuestion[]>(() => {
+    if (!student) return [];
+    const seed = seededHash(`${student.name}::${student.className}`);
+    return seededShuffle(quizData.map((question, sourceIndex) => {
+      const choices = question[1].map((text, optionIndex) => ({ text, isCorrect: optionIndex === question[2] }));
+      const shuffledChoices = seededShuffle(choices, seed + sourceIndex + 1);
+      return { prompt: question[0], options: shuffledChoices.map((choice) => choice.text), correctIndex: shuffledChoices.findIndex((choice) => choice.isCorrect), explanation: question[3], category: quizCategories[sourceIndex] ?? "Struktur & teks" };
+    }), seed);
+  }, [student]);
+  const score = useMemo(() => displayQuizData.length ? Math.round((displayQuizData.reduce((total, question, index) => total + (quizAnswers[index] === question.correctIndex ? 1 : 0), 0) / displayQuizData.length) * 100) : 0, [displayQuizData, quizAnswers]);
+  const categorySummary = useMemo(() => Array.from(new Set(displayQuizData.map((question) => question.category))).map((category) => {
+    const questions = displayQuizData.map((question, index) => ({ question, index })).filter((item) => item.question.category === category);
+    const correct = questions.filter((item) => quizAnswers[item.index] === item.question.correctIndex).length;
+    return `${category}: ${correct}/${questions.length}`;
+  }).join(" · "), [displayQuizData, quizAnswers]);
 
   const loginStudent = (nextStudent: StudentSession) => {
     setStudent(nextStudent);
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    setQuizTimer(30 * 60);
+    setQuizTimerRunning(false);
     window.localStorage.setItem("markup-lab-student", JSON.stringify(nextStudent));
   };
 
@@ -358,6 +396,17 @@ export default function Home() {
     setStudent(null);
     window.localStorage.removeItem("markup-lab-student");
     setTimerRunning(false);
+    setQuizTimerRunning(false);
+  };
+
+  const submitQuiz = (automatic = false) => {
+    if (!automatic && Object.keys(quizAnswers).length < displayQuizData.length) {
+      setToast("Jawab semua soal dulu agar hasil dapat dihitung.");
+      return;
+    }
+    setQuizSubmitted(true);
+    setQuizTimerRunning(false);
+    setToast(automatic ? "Waktu habis. Jawaban kuis dinilai otomatis." : "Kuis dinilai. Lihat hasilmu di bagian atas.");
   };
 
   useEffect(() => {
@@ -367,11 +416,21 @@ export default function Home() {
   }, [timerRunning, timer]);
 
   useEffect(() => {
+    if (!quizTimerRunning || quizTimer <= 0) return;
+    const interval = window.setInterval(() => setQuizTimer((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(interval);
+  }, [quizTimerRunning, quizTimer]);
+
+  useEffect(() => {
     if (timer === 0) {
       setTimerRunning(false);
       setToast("Waktu belajar selesai. Saatnya refleksi!");
     }
   }, [timer]);
+
+  useEffect(() => {
+    if (quizTimer === 0 && !quizSubmitted && displayQuizData.length) submitQuiz(true);
+  }, [displayQuizData.length, quizSubmitted, quizTimer]);
 
   useEffect(() => {
     if (!toast) return;
@@ -385,16 +444,17 @@ export default function Home() {
       studentName: student.name,
       className: student.className,
       activityType: quizSubmitted ? "quiz" : "module",
-      activityLabel: quizSubmitted ? "Menyelesaikan kuis formatif" : currentModule.title,
+      activityLabel: quizSubmitted ? `Kuis formatif · ${categorySummary}` : currentModule.title,
       progress,
       score: quizSubmitted ? score : null,
     });
     sendHeartbeat();
     const interval = window.setInterval(sendHeartbeat, 5000);
     return () => window.clearInterval(interval);
-  }, [student, activeModule, progress, quizSubmitted, score]);
+  }, [student, activeModule, categorySummary, progress, quizSubmitted, score]);
 
   const formatTimer = `${String(Math.floor(timer / 60)).padStart(2, "0")}:${String(timer % 60).padStart(2, "0")}`;
+  const formatQuizTimer = `${String(Math.floor(quizTimer / 60)).padStart(2, "0")}:${String(quizTimer % 60).padStart(2, "0")}`;
   const toggleComplete = (id: number) => {
     setCompleted((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
     setToast(completed.includes(id) ? "Topik ditandai belum selesai." : "Topik selesai — lanjutkan eksplorasi!");
@@ -432,10 +492,10 @@ export default function Home() {
     const safeClass = student?.className ?? "kelas";
     const filename = `${fileSafe(safeStudent)}_${fileSafe(safeClass)}_HasilKuis.pdf`;
     const savedAt = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-    const answerSummary = quizData.map((question, index) => {
+    const answerSummary = displayQuizData.map((question, index) => {
       const answer = quizAnswers[index];
-      const status = answer === question[2] ? "BENAR" : answer === undefined ? "KOSONG" : "KURANG TEPAT";
-      return `${String(index + 1).padStart(2, "0")}. ${status} — Jawaban benar: ${question[1][question[2]]}`;
+      const status = answer === question.correctIndex ? "BENAR" : answer === undefined ? "KOSONG" : "KURANG TEPAT";
+      return `${String(index + 1).padStart(2, "0")}. [${question.category}] ${status} — Jawaban benar: ${question.options[question.correctIndex]}`;
     }).join("\n");
     downloadTextPdf(filename, "HASIL KUIS FORMATIF HTML", [
       { heading: "Identitas siswa", body: `Nama siswa: ${student?.name ?? "Belum diisi"}\nKelas: ${student?.className ?? "Belum dipilih"}` },
@@ -535,7 +595,7 @@ export default function Home() {
 
         <section id="kuis" className="section-block container quiz-section">
           <div className="section-heading split-heading"><div><SectionLabel tone="pink">CEK PEMAHAMAN</SectionLabel><h2>Uji diri, <br /><span>tanpa menghakimi.</span></h2></div><p>Sepuluh pertanyaan singkat untuk mengunci konsep. Nilai muncul setelah semua jawaban dikirim.</p></div>
-          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 25 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div></div><div className="quiz-grid">{quizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question[2] ? "correct" : "incorrect") : ""}`} key={index}><legend><span>{String(index + 1).padStart(2, "0")}</span>{question[0]}</legend><div className="answer-options">{question[1].map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question[2] ? <><CheckCircle2 size={14} /> Benar — {question[3]}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question[1][question[2]]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 25 dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><a className="drive-button" href="https://drive.google.com/drive/folders/1PFitGIEp-bNsmeZcigpcShSjEBtDsX1T?usp=drive_link" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka folder Drive</a><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 25) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div>{lastLocalExport && <div className="local-export-status"><CheckCircle2 size={15} /><span><b>Simulasi penyimpanan lokal aktif.</b> {lastLocalExport.filename}<small>{lastLocalExport.savedAt} · siap diunggah ke Drive setelah koneksi diaktifkan</small></span></div>}</div>
+          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 25 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div><div className={`quiz-countdown ${quizTimer <= 300 ? "urgent" : ""}`}><TimerReset size={14} /><span>{formatQuizTimer}</span><small>30 MENIT</small></div></div><div className="quiz-grid">{displayQuizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question.correctIndex ? "correct" : "incorrect") : ""}`} key={index}><legend><span>{String(index + 1).padStart(2, "0")}</span>{question.prompt}</legend><div className="answer-options">{question.options.map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); setQuizTimerRunning(true); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question.correctIndex ? <><CheckCircle2 size={14} /> Benar — {question.explanation}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question.options[question.correctIndex]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 25 dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><a className="drive-button" href="https://drive.google.com/drive/folders/1PFitGIEp-bNsmeZcigpcShSjEBtDsX1T?usp=drive_link" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka folder Drive</a><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 25) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div>{lastLocalExport && <div className="local-export-status"><CheckCircle2 size={15} /><span><b>Simulasi penyimpanan lokal aktif.</b> {lastLocalExport.filename}<small>{lastLocalExport.savedAt} · siap diunggah ke Drive setelah koneksi diaktifkan</small></span></div>}</div>
         </section>
 
         <section className="final-cta container"><div><SectionLabel tone="violet">NEXT STEP</SectionLabel><h2>Jadikan kode ini<br /><span>bagian dari portofoliomu.</span></h2></div><div className="final-cta-side"><p>Simpan hasil sandbox, tambahkan identitas visualmu, lalu teruskan eksplorasi ke CSS dan JavaScript.</p><button className="outline-button" onClick={() => scrollTo("sandbox")}>Kembali ke sandbox <ArrowUpIcon /></button></div></section>
