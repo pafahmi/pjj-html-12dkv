@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { trpc } from "@/lib/trpc";
 import {
   ArrowDown,
   ArrowRight,
+  Activity,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -302,6 +304,7 @@ function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void 
 }
 
 export default function Home() {
+  const activityHeartbeat = trpc.student.heartbeat.useMutation();
   const [student, setStudent] = useState<StudentSession | null>(() => {
     try {
       const saved = window.localStorage.getItem("markup-lab-student");
@@ -361,6 +364,21 @@ export default function Home() {
     const timeout = window.setTimeout(() => setToast(""), 2800);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    if (!student) return;
+    const sendHeartbeat = () => activityHeartbeat.mutate({
+      studentName: student.name,
+      className: student.className,
+      activityType: quizSubmitted ? "quiz" : "module",
+      activityLabel: quizSubmitted ? "Menyelesaikan kuis formatif" : currentModule.title,
+      progress,
+      score: quizSubmitted ? score : null,
+    });
+    sendHeartbeat();
+    const interval = window.setInterval(sendHeartbeat, 5000);
+    return () => window.clearInterval(interval);
+  }, [student, activeModule, progress, quizSubmitted, score]);
 
   const formatTimer = `${String(Math.floor(timer / 60)).padStart(2, "0")}:${String(timer % 60).padStart(2, "0")}`;
   const toggleComplete = (id: number) => {
@@ -432,6 +450,7 @@ export default function Home() {
             <button onClick={() => scrollTo("sandbox")}>Sandbox</button>
             <button onClick={() => scrollTo("kuis")}>Kuis</button>
           </nav>
+          <a className="teacher-link" href="/guru">Portal guru <Activity size={13} /></a>
           <div className="topbar-actions">
             <div className="student-chip"><span>{student.name.slice(0, 1).toUpperCase()}</span><strong>{student.name}</strong><small>{student.className}</small><button onClick={logoutStudent} title="Keluar dari sesi siswa" aria-label="Keluar"><LogOut size={13} /></button></div>
             <div className="timer-pill"><Clock3 size={15} /><span>{formatTimer}</span><button onClick={() => setTimerRunning((running) => !running)} aria-label="Mulai atau jeda timer"><span className={timerRunning ? "pause-icon" : "play-icon"}>{timerRunning ? "Ⅱ" : "▶"}</span></button></div>
