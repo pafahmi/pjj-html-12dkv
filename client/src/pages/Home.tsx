@@ -21,6 +21,7 @@ import {
   LayoutTemplate,
   Lightbulb,
   Link2,
+  LogOut,
   ListChecks,
   Menu,
   MonitorPlay,
@@ -33,6 +34,7 @@ import {
   TerminalSquare,
   TimerReset,
   Type,
+  UserRound,
   X,
   Zap,
 } from "lucide-react";
@@ -273,7 +275,36 @@ function SectionLabel({ children, tone = "lime" }: { children: React.ReactNode; 
   return <div className={`section-label ${tone}`}><span className="section-dot" />{children}</div>;
 }
 
+type StudentSession = { name: string; className: string };
+const classOptions = ["XII DKV A", "XII DKV B", "XII DKV C", "XII DKV D"];
+
+function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void }) {
+  const [name, setName] = useState("");
+  const [className, setClassName] = useState(classOptions[0]);
+  const [error, setError] = useState("");
+
+  const submitLogin = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const cleanName = name.trim().replace(/\s+/g, " ");
+    if (cleanName.length < 2) {
+      setError("Masukkan nama lengkap minimal 2 karakter.");
+      return;
+    }
+    onLogin({ name: cleanName, className });
+  };
+
+  return <div className="login-shell"><div className="login-grid" /><div className="login-orbit" /><div className="login-card card-surface"><div className="login-brand"><span className="brand-mark"><Code2 size={22} /></span><div className="brand-copy"><strong>Markup<span>Lab</span></strong><small>STUDIO BELAJAR PJJ</small></div></div><SectionLabel>AREA SISWA / PJJ HTML</SectionLabel><h1>Siapa yang<br /><em>sedang belajar?</em></h1><p className="login-lede">Masuk dengan identitasmu untuk memulai modul HTML interaktif kelas XII DKV.</p><form onSubmit={submitLogin} className="login-form"><label htmlFor="student-name">Nama siswa<span>*</span></label><div className="login-input-wrap"><UserRound size={17} /><input id="student-name" value={name} onChange={(event) => { setName(event.target.value); setError(""); }} placeholder="Contoh: Alya Putri" autoComplete="name" autoFocus /></div><label htmlFor="student-class">Pilih kelas<span>*</span></label><div className="login-select-wrap"><Layers3 size={17} /><select id="student-class" value={className} onChange={(event) => setClassName(event.target.value)}>{classOptions.map((option) => <option key={option}>{option}</option>)}</select></div>{error && <p className="login-error">{error}</p>}<button type="submit" className="primary-button login-submit">Masuk ke modul <ArrowRight size={17} /></button></form><div className="login-note"><Sparkles size={14} /> Data sesi hanya disimpan di browser perangkat ini.</div></div><div className="login-side-note"><span>HTML / 01</span><strong>Rancang struktur.<br /><i>Hidupkan</i> ide.</strong><small>Modul pembelajaran jarak jauh<br />untuk Desain Komunikasi Visual.</small></div></div>;
+}
+
 export default function Home() {
+  const [student, setStudent] = useState<StudentSession | null>(() => {
+    try {
+      const saved = window.localStorage.getItem("markup-lab-student");
+      return saved ? JSON.parse(saved) as StudentSession : null;
+    } catch {
+      return null;
+    }
+  });
   const [activeModule, setActiveModule] = useState(0);
   const [code, setCode] = useState(starterCode);
   const [timer, setTimer] = useState(80 * 60);
@@ -287,6 +318,17 @@ export default function Home() {
   const currentModule = modules[activeModule];
   const progress = Math.round((completed.length / modules.length) * 100);
   const score = useMemo(() => quizData.reduce((total, question, index) => total + (quizAnswers[index] === question[2] ? 10 : 0), 0), [quizAnswers]);
+
+  const loginStudent = (nextStudent: StudentSession) => {
+    setStudent(nextStudent);
+    window.localStorage.setItem("markup-lab-student", JSON.stringify(nextStudent));
+  };
+
+  const logoutStudent = () => {
+    setStudent(null);
+    window.localStorage.removeItem("markup-lab-student");
+    setTimerRunning(false);
+  };
 
   useEffect(() => {
     if (!timerRunning || timer <= 0) return;
@@ -353,11 +395,13 @@ export default function Home() {
     setToast("PDF hasil kuis sedang diunduh.");
   };
 
+  if (!student) return <StudentLogin onLogin={loginStudent} />;
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-inner">
-          <button className="brand" onClick={() => scrollTo("top")} aria-label="Kembali ke atas">
+            <button className="brand" onClick={() => scrollTo("top")} aria-label="Kembali ke atas">
             <span className="brand-mark"><Code2 size={19} /></span>
             <span className="brand-copy"><strong>Markup<span>Lab</span></strong><small>STUDIO BELAJAR PJJ</small></span>
           </button>
@@ -368,6 +412,7 @@ export default function Home() {
             <button onClick={() => scrollTo("kuis")}>Kuis</button>
           </nav>
           <div className="topbar-actions">
+            <div className="student-chip"><span>{student.name.slice(0, 1).toUpperCase()}</span><strong>{student.name}</strong><small>{student.className}</small><button onClick={logoutStudent} title="Keluar dari sesi siswa" aria-label="Keluar"><LogOut size={13} /></button></div>
             <div className="timer-pill"><Clock3 size={15} /><span>{formatTimer}</span><button onClick={() => setTimerRunning((running) => !running)} aria-label="Mulai atau jeda timer"><span className={timerRunning ? "pause-icon" : "play-icon"}>{timerRunning ? "Ⅱ" : "▶"}</span></button></div>
             <button className="mobile-menu" onClick={() => setMobileNav((open) => !open)} aria-label="Buka navigasi">{mobileNav ? <X size={20} /> : <Menu size={20} />}</button>
           </div>
