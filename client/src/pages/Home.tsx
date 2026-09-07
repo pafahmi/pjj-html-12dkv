@@ -283,7 +283,7 @@ function SectionLabel({ children, tone = "lime" }: { children: React.ReactNode; 
 
 type StudentSession = { name: string; className: string };
 type LocalExport = { filename: string; savedAt: string; name: string; className: string };
-const classOptions = ["12 DK1", "12 DKV2", "12 DKV3"];
+const classOptions = ["12 DKV1", "12 DKV2", "12 DKV3"];
 
 function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void }) {
   const [name, setName] = useState("");

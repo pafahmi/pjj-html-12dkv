@@ -3,7 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Activity, ArrowRight, Bell, BookOpenCheck, CheckCircle2, CircleAlert, Clock3, Download, FileText, Filter, Gauge, LogOut, RefreshCw, Search, ShieldAlert, Table2, UsersRound, Wifi } from "lucide-react";
 
-const classOptions = ["Semua kelas", "12 DK1", "12 DKV2", "12 DKV3"];
+const classOptions = ["Semua kelas", "12 DKV1", "12 DKV2", "12 DKV3"];
 
 function formatSeen(value: Date | string) {
   const date = new Date(value);
