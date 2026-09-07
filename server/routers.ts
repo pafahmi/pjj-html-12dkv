@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { listRecentStudentActivities, recordStudentActivity } from "./db";
+import { getQuizSettings, listRecentStudentActivities, recordStudentActivity, updateQuizSettings } from "./db";
 
 export const appRouter = router({
   system: systemRouter,
@@ -17,6 +17,7 @@ export const appRouter = router({
     }),
   }),
   student: router({
+    quizSettings: publicProcedure.query(() => getQuizSettings()),
     heartbeat: publicProcedure.input(z.object({
       studentName: z.string().min(2).max(160),
       className: z.string().min(1).max(32),
@@ -30,6 +31,11 @@ export const appRouter = router({
     }),
   }),
   teacher: router({
+    quizSettings: adminProcedure.query(() => getQuizSettings()),
+    updateQuizSettings: adminProcedure.input(z.object({
+      durationMinutes: z.number().int().min(5).max(120),
+      questionCount: z.number().int().min(5).max(25),
+    })).mutation(({ input }) => updateQuizSettings(input.durationMinutes, input.questionCount)),
     liveOverview: adminProcedure.query(async () => {
       const activities = await listRecentStudentActivities();
       const latestByStudent = new Map<string, typeof activities[number]>();

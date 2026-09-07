@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertStudentActivity, InsertUser, StudentActivity, studentActivities, users } from "../drizzle/schema";
+import { InsertStudentActivity, InsertUser, QuizSettings, StudentActivity, quizSettings, studentActivities, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -71,4 +71,19 @@ export async function listRecentStudentActivities(): Promise<StudentActivity[]> 
   const db = await getDb();
   if (!db) return [];
   return db.select().from(studentActivities).orderBy(desc(studentActivities.lastSeenAt)).limit(500);
+}
+
+export async function getQuizSettings(): Promise<QuizSettings> {
+  const fallback = { id: 1, durationMinutes: 30, questionCount: 25, updatedAt: new Date() };
+  const db = await getDb();
+  if (!db) return fallback;
+  const result = await db.select().from(quizSettings).where(eq(quizSettings.id, 1)).limit(1);
+  return result[0] ?? fallback;
+}
+
+export async function updateQuizSettings(durationMinutes: number, questionCount: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.insert(quizSettings).values({ id: 1, durationMinutes, questionCount }).onDuplicateKeyUpdate({ set: { durationMinutes, questionCount } });
+  return getQuizSettings();
 }

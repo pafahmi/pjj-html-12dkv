@@ -25,7 +25,16 @@ export const studentActivities = mysqlTable("student_activities", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const quizSettings = mysqlTable("quiz_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  durationMinutes: int("durationMinutes").default(30).notNull(),
+  questionCount: int("questionCount").default(25).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type StudentActivity = typeof studentActivities.$inferSelect;
 export type InsertStudentActivity = typeof studentActivities.$inferInsert;
+export type QuizSettings = typeof quizSettings.$inferSelect;
+export type InsertQuizSettings = typeof quizSettings.$inferInsert;

@@ -337,6 +337,8 @@ function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void 
 
 export default function Home() {
   const activityHeartbeat = trpc.student.heartbeat.useMutation();
+  const quizSettingsQuery = trpc.student.quizSettings.useQuery(undefined, { staleTime: 30_000, refetchInterval: 30_000 });
+  const quizSettings = quizSettingsQuery.data ?? { durationMinutes: 30, questionCount: 25 };
   const [student, setStudent] = useState<StudentSession | null>(() => {
     try {
       const saved = window.localStorage.getItem("markup-lab-student");
@@ -374,20 +376,25 @@ export default function Home() {
       const choices = question[1].map((text, optionIndex) => ({ text, isCorrect: optionIndex === question[2] }));
       const shuffledChoices = seededShuffle(choices, seed + sourceIndex + 1);
       return { prompt: question[0], options: shuffledChoices.map((choice) => choice.text), correctIndex: shuffledChoices.findIndex((choice) => choice.isCorrect), explanation: question[3], category: quizCategories[sourceIndex] ?? "Struktur & teks" };
-    }), seed);
-  }, [student]);
+    }), seed).slice(0, quizSettings.questionCount);
+  }, [quizSettings.questionCount, student]);
   const score = useMemo(() => displayQuizData.length ? Math.round((displayQuizData.reduce((total, question, index) => total + (quizAnswers[index] === question.correctIndex ? 1 : 0), 0) / displayQuizData.length) * 100) : 0, [displayQuizData, quizAnswers]);
   const categorySummary = useMemo(() => Array.from(new Set(displayQuizData.map((question) => question.category))).map((category) => {
     const questions = displayQuizData.map((question, index) => ({ question, index })).filter((item) => item.question.category === category);
     const correct = questions.filter((item) => quizAnswers[item.index] === item.question.correctIndex).length;
     return `${category}: ${correct}/${questions.length}`;
   }).join(" · "), [displayQuizData, quizAnswers]);
+  const categoryResults = useMemo(() => Array.from(new Set(displayQuizData.map((question) => question.category))).map((category) => {
+    const items = displayQuizData.map((question, index) => ({ question, index })).filter((item) => item.question.category === category);
+    const correct = items.filter((item) => quizAnswers[item.index] === item.question.correctIndex).length;
+    return { category, correct, total: items.length };
+  }), [displayQuizData, quizAnswers]);
 
   const loginStudent = (nextStudent: StudentSession) => {
     setStudent(nextStudent);
     setQuizAnswers({});
     setQuizSubmitted(false);
-    setQuizTimer(30 * 60);
+    setQuizTimer(quizSettings.durationMinutes * 60);
     setQuizTimerRunning(false);
     window.localStorage.setItem("markup-lab-student", JSON.stringify(nextStudent));
   };
@@ -420,6 +427,10 @@ export default function Home() {
     const interval = window.setInterval(() => setQuizTimer((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(interval);
   }, [quizTimerRunning, quizTimer]);
+
+  useEffect(() => {
+    if (!quizTimerRunning && !quizSubmitted) setQuizTimer(quizSettings.durationMinutes * 60);
+  }, [quizSettings.durationMinutes, quizSubmitted, quizTimerRunning]);
 
   useEffect(() => {
     if (timer === 0) {
@@ -595,7 +606,7 @@ export default function Home() {
 
         <section id="kuis" className="section-block container quiz-section">
           <div className="section-heading split-heading"><div><SectionLabel tone="pink">CEK PEMAHAMAN</SectionLabel><h2>Uji diri, <br /><span>tanpa menghakimi.</span></h2></div><p>Sepuluh pertanyaan singkat untuk mengunci konsep. Nilai muncul setelah semua jawaban dikirim.</p></div>
-          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 25 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div><div className={`quiz-countdown ${quizTimer <= 300 ? "urgent" : ""}`}><TimerReset size={14} /><span>{formatQuizTimer}</span><small>30 MENIT</small></div></div><div className="quiz-grid">{displayQuizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question.correctIndex ? "correct" : "incorrect") : ""}`} key={index}><legend><span>{String(index + 1).padStart(2, "0")}</span>{question.prompt}</legend><div className="answer-options">{question.options.map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); setQuizTimerRunning(true); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question.correctIndex ? <><CheckCircle2 size={14} /> Benar — {question.explanation}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question.options[question.correctIndex]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 25 dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><a className="drive-button" href="https://drive.google.com/drive/folders/1PFitGIEp-bNsmeZcigpcShSjEBtDsX1T?usp=drive_link" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka folder Drive</a><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 25) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div>{lastLocalExport && <div className="local-export-status"><CheckCircle2 size={15} /><span><b>Simulasi penyimpanan lokal aktif.</b> {lastLocalExport.filename}<small>{lastLocalExport.savedAt} · siap diunggah ke Drive setelah koneksi diaktifkan</small></span></div>}</div>
+          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / {displayQuizData.length} SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div><div className={`quiz-countdown ${quizTimer <= 300 ? "urgent" : ""}`}><TimerReset size={14} /><span>{formatQuizTimer}</span><small>{quizSettings.durationMinutes} MENIT</small></div></div><div className="quiz-grid">{displayQuizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question.correctIndex ? "correct" : "incorrect") : ""}`} key={index}><legend><span>{String(index + 1).padStart(2, "0")}</span>{question.prompt}</legend><div className="answer-options">{question.options.map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); setQuizTimerRunning(true); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question.correctIndex ? <><CheckCircle2 size={14} /> Benar — {question.explanation}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question.options[question.correctIndex]}</b></>}</div>}</fieldset>)}</div>{quizSubmitted && <div className="quiz-review-panel"><div className="quiz-review-heading"><CheckCircle2 size={17} /><div><strong>Pembahasan selesai</strong><span>Jawaban benar ditandai hijau, jawaban yang perlu diperbaiki ditandai ungu. Baca catatan pada setiap soal untuk memahami konsepnya.</span></div></div><div className="quiz-review-categories">{categoryResults.map((result) => <span key={result.category}><b>{result.category}</b><em>{result.correct}/{result.total} benar</em></span>)}</div></div>}<div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / {displayQuizData.length} dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><a className="drive-button" href="https://drive.google.com/drive/folders/1PFitGIEp-bNsmeZcigpcShSjEBtDsX1T?usp=drive_link" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka folder Drive</a><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 25) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div>{lastLocalExport && <div className="local-export-status"><CheckCircle2 size={15} /><span><b>Simulasi penyimpanan lokal aktif.</b> {lastLocalExport.filename}<small>{lastLocalExport.savedAt} · siap diunggah ke Drive setelah koneksi diaktifkan</small></span></div>}</div>
         </section>
 
         <section className="final-cta container"><div><SectionLabel tone="violet">NEXT STEP</SectionLabel><h2>Jadikan kode ini<br /><span>bagian dari portofoliomu.</span></h2></div><div className="final-cta-side"><p>Simpan hasil sandbox, tambahkan identitas visualmu, lalu teruskan eksplorasi ke CSS dan JavaScript.</p><button className="outline-button" onClick={() => scrollTo("sandbox")}>Kembali ke sandbox <ArrowUpIcon /></button></div></section>
