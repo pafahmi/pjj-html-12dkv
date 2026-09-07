@@ -1,13 +1,69 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { Activity, BookOpenCheck, CheckCircle2, Clock3, Filter, Gauge, LogOut, RefreshCw, Search, ShieldAlert, UsersRound, Wifi } from "lucide-react";
+import { Activity, BookOpenCheck, CheckCircle2, Clock3, Download, FileText, Filter, Gauge, LogOut, RefreshCw, Search, ShieldAlert, Table2, UsersRound, Wifi } from "lucide-react";
 
 const classOptions = ["Semua kelas", "12 DK1", "12 DKV2", "12 DKV3"];
 
 function formatSeen(value: Date | string) {
   const date = new Date(value);
   return date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function csvCell(value: unknown) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function safeFilePart(value: string) {
+  return value.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "") || "semua";
+}
+
+type ExportStudent = { studentName: string; className: string; activityLabel: string; activityType?: string; progress: number; score: number | null; lastSeenAt: Date | string; isOnline: number };
+
+function downloadCsv(students: ExportStudent[], classFilter: string) {
+  const exportedAt = new Date().toLocaleString("id-ID");
+  const rows: unknown[][] = [
+    ["Rekap Aktivitas dan Nilai Siswa — MarkupLab"],
+    [`Filter kelas: ${classFilter}`, `Diekspor: ${exportedAt}`],
+    [],
+    ["Nama siswa", "Kelas", "Aktivitas terakhir", "Jenis aktivitas", "Progress (%)", "Nilai kuis", "Terakhir terlihat", "Status"],
+    ...students.map((student) => [student.studentName, student.className, student.activityLabel, student.activityType ?? "", student.progress, student.score ?? "", new Date(student.lastSeenAt).toLocaleString("id-ID"), student.isOnline ? "Online" : "Offline"]),
+  ];
+  const content = "\ufeff" + rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `Rekap_Aktivitas_${safeFilePart(classFilter)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function pdfText(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function downloadPdf(students: ExportStudent[], classFilter: string) {
+  const lines = [
+    "MARKUPLAB — REKAP AKTIVITAS SISWA",
+    `Filter kelas: ${classFilter}`,
+    `Diekspor: ${new Date().toLocaleString("id-ID")}`,
+    `Total siswa: ${students.length}`,
+    "",
+    ...students.map((student, index) => `${String(index + 1).padStart(2, "0")}. ${student.studentName} | ${student.className} | ${student.progress}% | Nilai: ${student.score ?? "-"} | ${student.isOnline ? "ONLINE" : "OFFLINE"} | ${student.activityLabel} | ${formatSeen(student.lastSeenAt)}`),
+  ];
+  const content = ["BT", "/F1 9 Tf", "40 800 Td", ...lines.flatMap((line) => [`(${pdfText(line)}) Tj`, "0 -15 Td"]), "ET"].join("\n");
+  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", `<< /Length ${content.length} >>\nstream\n${content}\nendstream`];
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, index) => { offsets.push(pdf.length); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n `).join("\n")}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const url = URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `Rekap_Aktivitas_${safeFilePart(classFilter)}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function TeacherDashboard() {
@@ -30,6 +86,8 @@ export default function TeacherDashboard() {
   if (user.role !== "admin") return <div className="teacher-denied"><ShieldAlert size={30} /><h1>Akses guru diperlukan</h1><p>Akun ini belum memiliki peran admin. Minta administrator project untuk mengaktifkan akses dashboard guru.</p><button className="teacher-outline-button" onClick={() => void logout()}>Keluar</button></div>;
 
   const totals = overview.data?.totals ?? { active: 0, tracked: 0, averageProgress: 0 };
+  const exportCurrentCsv = () => downloadCsv(students, classFilter);
+  const exportCurrentPdf = () => downloadPdf(students, classFilter);
 
-  return <div className="teacher-shell"><aside className="teacher-sidebar"><div className="teacher-logo"><span className="teacher-logo-mark">&lt;/&gt;</span><span><b>Markup<span>Lab</span></b><small>TEACHER CONSOLE</small></span></div><div className="teacher-sidebar-label">MONITORING</div><div className="teacher-side-active"><Activity size={16} /> Live activity</div><div className="teacher-sidebar-spacer" /><div className="teacher-side-user"><span className="teacher-avatar">{(user.name ?? "G").slice(0, 1).toUpperCase()}</span><span><b>{user.name ?? "Guru"}</b><small>Administrator</small></span><button onClick={() => void logout()} title="Keluar"><LogOut size={14} /></button></div></aside><main className="teacher-main"><header className="teacher-header"><div><span className="teacher-kicker"><span className="live-dot" /> REAL-TIME CLASSROOM</span><h1>Aktivitas siswa</h1><p>Pantau ritme belajar kelas HTML secara langsung.</p></div><div className="teacher-refresh"><span><Wifi size={14} /> Auto-refresh 5 detik</span><button onClick={() => void overview.refetch()}><RefreshCw size={15} className={overview.isFetching ? "spin" : ""} /> Refresh</button></div></header><section className="teacher-stats"><article><span className="stat-icon green"><UsersRound size={18} /></span><div><small>SISWA ONLINE</small><strong>{totals.active}</strong></div><em>45 detik terakhir</em></article><article><span className="stat-icon purple"><BookOpenCheck size={18} /></span><div><small>TERPANTAU</small><strong>{totals.tracked}</strong></div><em>nama / kelas unik</em></article><article><span className="stat-icon orange"><Gauge size={18} /></span><div><small>RATA-RATA PROGRESS</small><strong>{totals.averageProgress}%</strong></div><em>modul pembelajaran</em></article></section><section className="teacher-toolbar"><div className="teacher-search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama siswa…" /></div><div className="teacher-filter"><Filter size={14} /><select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>{classOptions.map((option) => <option key={option}>{option}</option>)}</select></div><span className="teacher-result-count">{students.length} siswa terlihat</span></section><section className="activity-panel"><div className="activity-panel-head"><div><h2>Live student feed</h2><p>Aktivitas terbaru berdasarkan heartbeat dari perangkat siswa.</p></div><span className="updated-at"><Clock3 size={13} /> {overview.data?.refreshedAt ? `Diperbarui ${formatSeen(overview.data.refreshedAt)}` : "Menunggu data"}</span></div>{overview.isLoading ? <div className="teacher-empty"><RefreshCw className="spin" size={18} /> Mengambil aktivitas…</div> : overview.error ? <div className="teacher-empty error"><ShieldAlert size={18} /> Dashboard memerlukan akun admin dan koneksi database aktif.</div> : students.length === 0 ? <div className="teacher-empty"><UsersRound size={22} /><b>Belum ada aktivitas siswa</b><span>Siswa akan muncul setelah membuka modul dan mengirim heartbeat.</span></div> : <div className="student-table-wrap"><table className="student-table"><thead><tr><th>SISWA</th><th>KELAS</th><th>AKTIVITAS TERKINI</th><th>PROGRESS</th><th>TERAKHIR TERLIHAT</th><th>STATUS</th></tr></thead><tbody>{students.map((student) => <tr key={`${student.studentName}-${student.className}`}><td><div className="student-name-cell"><span>{student.studentName.slice(0, 1).toUpperCase()}</span><b>{student.studentName}</b></div></td><td><span className="class-badge">{student.className}</span></td><td><div className="activity-cell"><strong>{student.activityLabel}</strong><small>{student.activityType === "quiz" ? "Evaluasi formatif" : "Eksplorasi modul"}{student.score !== null ? ` · skor ${student.score}` : ""}</small></div></td><td><div className="progress-cell"><div><span style={{ width: `${student.progress}%` }} /></div><b>{student.progress}%</b></div></td><td><span className="seen-time">{formatSeen(student.lastSeenAt)}</span></td><td><span className={`online-status ${student.isOnline ? "online" : "offline"}`}><i />{student.isOnline ? "Online" : "Offline"}</span></td></tr>)}</tbody></table></div>}</section><footer className="teacher-footer"><CheckCircle2 size={14} /> Data aktivitas disimpan aman di database project · update otomatis setiap 5 detik</footer></main></div>;
+  return <div className="teacher-shell"><aside className="teacher-sidebar"><div className="teacher-logo"><span className="teacher-logo-mark">&lt;/&gt;</span><span><b>Markup<span>Lab</span></b><small>TEACHER CONSOLE</small></span></div><div className="teacher-sidebar-label">MONITORING</div><div className="teacher-side-active"><Activity size={16} /> Live activity</div><div className="teacher-sidebar-spacer" /><div className="teacher-side-user"><span className="teacher-avatar">{(user.name ?? "G").slice(0, 1).toUpperCase()}</span><span><b>{user.name ?? "Guru"}</b><small>Administrator</small></span><button onClick={() => void logout()} title="Keluar"><LogOut size={14} /></button></div></aside><main className="teacher-main"><header className="teacher-header"><div><span className="teacher-kicker"><span className="live-dot" /> REAL-TIME CLASSROOM</span><h1>Aktivitas siswa</h1><p>Pantau ritme belajar kelas HTML secara langsung.</p></div><div className="teacher-refresh"><span><Wifi size={14} /> Auto-refresh 5 detik</span><button onClick={() => void overview.refetch()}><RefreshCw size={15} className={overview.isFetching ? "spin" : ""} /> Refresh</button></div></header><section className="teacher-stats"><article><span className="stat-icon green"><UsersRound size={18} /></span><div><small>SISWA ONLINE</small><strong>{totals.active}</strong></div><em>45 detik terakhir</em></article><article><span className="stat-icon purple"><BookOpenCheck size={18} /></span><div><small>TERPANTAU</small><strong>{totals.tracked}</strong></div><em>nama / kelas unik</em></article><article><span className="stat-icon orange"><Gauge size={18} /></span><div><small>RATA-RATA PROGRESS</small><strong>{totals.averageProgress}%</strong></div><em>modul pembelajaran</em></article></section><section className="teacher-toolbar"><div className="teacher-search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari nama siswa…" /></div><div className="teacher-filter"><Filter size={14} /><select value={classFilter} onChange={(event) => setClassFilter(event.target.value)}>{classOptions.map((option) => <option key={option}>{option}</option>)}</select></div><span className="teacher-result-count">{students.length} siswa terlihat</span><div className="teacher-export-actions"><button onClick={exportCurrentCsv} disabled={!students.length}><Table2 size={13} /> CSV</button><button onClick={exportCurrentPdf} disabled={!students.length}><FileText size={13} /> PDF</button></div></section><section className="activity-panel"><div className="activity-panel-head"><div><h2>Live student feed</h2><p>Aktivitas terbaru berdasarkan heartbeat dari perangkat siswa.</p></div><span className="updated-at"><Clock3 size={13} /> {overview.data?.refreshedAt ? `Diperbarui ${formatSeen(overview.data.refreshedAt)}` : "Menunggu data"}</span></div>{overview.isLoading ? <div className="teacher-empty"><RefreshCw className="spin" size={18} /> Mengambil aktivitas…</div> : overview.error ? <div className="teacher-empty error"><ShieldAlert size={18} /> Dashboard memerlukan akun admin dan koneksi database aktif.</div> : students.length === 0 ? <div className="teacher-empty"><UsersRound size={22} /><b>Belum ada aktivitas siswa</b><span>Siswa akan muncul setelah membuka modul dan mengirim heartbeat.</span></div> : <div className="student-table-wrap"><table className="student-table"><thead><tr><th>SISWA</th><th>KELAS</th><th>AKTIVITAS TERKINI</th><th>PROGRESS</th><th>TERAKHIR TERLIHAT</th><th>STATUS</th></tr></thead><tbody>{students.map((student) => <tr key={`${student.studentName}-${student.className}`}><td><div className="student-name-cell"><span>{student.studentName.slice(0, 1).toUpperCase()}</span><b>{student.studentName}</b></div></td><td><span className="class-badge">{student.className}</span></td><td><div className="activity-cell"><strong>{student.activityLabel}</strong><small>{student.activityType === "quiz" ? "Evaluasi formatif" : "Eksplorasi modul"}{student.score !== null ? ` · skor ${student.score}` : ""}</small></div></td><td><div className="progress-cell"><div><span style={{ width: `${student.progress}%` }} /></div><b>{student.progress}%</b></div></td><td><span className="seen-time">{formatSeen(student.lastSeenAt)}</span></td><td><span className={`online-status ${student.isOnline ? "online" : "offline"}`}><i />{student.isOnline ? "Online" : "Offline"}</span></td></tr>)}</tbody></table></div>}</section><footer className="teacher-footer"><CheckCircle2 size={14} /> Data aktivitas disimpan aman di database project · update otomatis setiap 5 detik</footer></main></div>;
 }

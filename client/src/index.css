@@ -88,3 +88,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .teacher-link { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: #aeb6c3; text-decoration: none; font: 9px 'DM Mono'; letter-spacing: .04em; transition: color .18s ease; }.teacher-link:hover { color: #c7ff35; }
 @media (max-width: 920px) { .teacher-link { margin-left: 8px; } }
 @media (max-width: 640px) { .teacher-link { display: none; } }
+
+.teacher-export-actions { display: flex; gap: 7px; margin-left: 8px; }.teacher-export-actions button { display: inline-flex; align-items: center; gap: 5px; height: 35px; padding: 0 10px; color: #c7ff35; border: 1px solid rgba(199,255,53,.25); background: rgba(199,255,53,.07); border-radius: 7px; cursor: pointer; font: 10px 'DM Mono'; transition: background .18s ease, border-color .18s ease, opacity .18s ease; }.teacher-export-actions button:hover:not(:disabled) { background: rgba(199,255,53,.15); border-color: rgba(199,255,53,.5); }.teacher-export-actions button:disabled { cursor: not-allowed; opacity: .35; }
+@media (max-width: 800px) { .teacher-export-actions { width: 100%; margin-left: 0; }.teacher-export-actions button { flex: 1; justify-content: center; } }
