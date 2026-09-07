@@ -188,6 +188,10 @@ function escapePdfText(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
+function fileSafe(value: string) {
+  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_|_$/g, "") || "siswa";
+}
+
 function wrapPdfText(value: string, maxChars = 92) {
   const lines: string[] = [];
   value.split("\\n").forEach((rawLine) => {
@@ -276,6 +280,7 @@ function SectionLabel({ children, tone = "lime" }: { children: React.ReactNode; 
 }
 
 type StudentSession = { name: string; className: string };
+type LocalExport = { filename: string; savedAt: string; name: string; className: string };
 const classOptions = ["12 DK1", "12 DKV2", "12 DKV3"];
 
 function StudentLogin({ onLogin }: { onLogin: (student: StudentSession) => void }) {
@@ -314,6 +319,14 @@ export default function Home() {
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [toast, setToast] = useState("");
+  const [lastLocalExport, setLastLocalExport] = useState<LocalExport | null>(() => {
+    try {
+      const saved = window.localStorage.getItem("markup-lab-last-quiz-export");
+      return saved ? JSON.parse(saved) as LocalExport : null;
+    } catch {
+      return null;
+    }
+  });
 
   const currentModule = modules[activeModule];
   const progress = Math.round((completed.length / modules.length) * 100);
@@ -383,17 +396,24 @@ export default function Home() {
   };
 
   const downloadQuizPdf = () => {
+    const safeStudent = student?.name ?? "siswa";
+    const safeClass = student?.className ?? "kelas";
+    const filename = `${fileSafe(safeStudent)}_${fileSafe(safeClass)}_HasilKuis.pdf`;
+    const savedAt = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
     const answerSummary = quizData.map((question, index) => {
       const answer = quizAnswers[index];
       const status = answer === question[2] ? "BENAR" : answer === undefined ? "KOSONG" : "KURANG TEPAT";
       return `${String(index + 1).padStart(2, "0")}. ${status} — Jawaban benar: ${question[1][question[2]]}`;
     }).join("\n");
-    downloadTextPdf("markup-lab-hasil-kuis.pdf", "HASIL KUIS FORMATIF HTML", [
+    downloadTextPdf(filename, "HASIL KUIS FORMATIF HTML", [
       { heading: "Identitas siswa", body: `Nama siswa: ${student?.name ?? "Belum diisi"}\nKelas: ${student?.className ?? "Belum dipilih"}` },
       { heading: "Ringkasan nilai", body: quizSubmitted ? `Skor akhir: ${score}/100. Terima kasih sudah menyelesaikan evaluasi pembelajaran.` : "Kuis belum dikirim. File ini berisi status jawaban sementara." },
       { heading: "Rekap jawaban", body: answerSummary },
     ]);
-    setToast("PDF hasil kuis sedang diunduh.");
+    const exportRecord = { filename, savedAt, name: safeStudent, className: safeClass };
+    setLastLocalExport(exportRecord);
+    window.localStorage.setItem("markup-lab-last-quiz-export", JSON.stringify(exportRecord));
+    setToast(`PDF tersimpan lokal: ${filename}`);
   };
 
   if (!student) return <StudentLogin onLogin={loginStudent} />;
@@ -482,7 +502,7 @@ export default function Home() {
 
         <section id="kuis" className="section-block container quiz-section">
           <div className="section-heading split-heading"><div><SectionLabel tone="pink">CEK PEMAHAMAN</SectionLabel><h2>Uji diri, <br /><span>tanpa menghakimi.</span></h2></div><p>Sepuluh pertanyaan singkat untuk mengunci konsep. Nilai muncul setelah semua jawaban dikirim.</p></div>
-          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 10 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div></div><div className="quiz-grid">{quizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question[2] ? "correct" : "incorrect") : ""}`} key={index}><legend><span>0{index + 1}</span>{question[0]}</legend><div className="answer-options">{question[1].map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question[2] ? <><CheckCircle2 size={14} /> Benar — {question[3]}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question[1][question[2]]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 10 dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><a className="drive-button" href="https://drive.google.com/drive/folders/1PFitGIEp-bNsmeZcigpcShSjEBtDsX1T?usp=drive_link" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka folder Drive</a><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 10) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div></div>
+          <div className="quiz-card"><div className="quiz-card-head"><div><span className="eyebrow">FORMATIF / 10 SOAL</span><h3>Seberapa siap kamu membuat halaman HTML?</h3></div><div className="score-orb">{quizSubmitted ? <><strong>{score}</strong><small>/100</small></> : <CircleHelp size={24} />}</div></div><div className="quiz-grid">{quizData.map((question, index) => <fieldset className={`question-card ${quizSubmitted ? (quizAnswers[index] === question[2] ? "correct" : "incorrect") : ""}`} key={index}><legend><span>0{index + 1}</span>{question[0]}</legend><div className="answer-options">{question[1].map((option, optionIndex) => <label key={option}><input type="radio" name={`question-${index}`} checked={quizAnswers[index] === optionIndex} onChange={() => { setQuizAnswers((answers) => ({ ...answers, [index]: optionIndex })); setQuizSubmitted(false); }} /><span>{option}</span></label>)}</div>{quizSubmitted && <div className="answer-note">{quizAnswers[index] === question[2] ? <><CheckCircle2 size={14} /> Benar — {question[3]}</> : <><CircleHelp size={14} /> Belum tepat — jawaban: <b>{question[1][question[2]]}</b></>}</div>}</fieldset>)}</div><div className="quiz-actions"><span>{Object.keys(quizAnswers).length} / 10 dijawab</span><div className="quiz-action-buttons"><button className="download-button" onClick={downloadQuizPdf}><Download size={15} /> Unduh hasil PDF</button><a className="drive-button" href="https://drive.google.com/drive/folders/1PFitGIEp-bNsmeZcigpcShSjEBtDsX1T?usp=drive_link" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Buka folder Drive</a><button className="primary-button" onClick={() => { if (Object.keys(quizAnswers).length < 10) { setToast("Jawab semua soal dulu agar hasil dapat dihitung."); return; } setQuizSubmitted(true); setToast("Kuis dinilai. Lihat hasilmu di bagian atas."); }}>Kirim jawaban <ArrowRight size={16} /></button></div></div>{lastLocalExport && <div className="local-export-status"><CheckCircle2 size={15} /><span><b>Simulasi penyimpanan lokal aktif.</b> {lastLocalExport.filename}<small>{lastLocalExport.savedAt} · siap diunggah ke Drive setelah koneksi diaktifkan</small></span></div>}</div>
         </section>
 
         <section className="final-cta container"><div><SectionLabel tone="violet">NEXT STEP</SectionLabel><h2>Jadikan kode ini<br /><span>bagian dari portofoliomu.</span></h2></div><div className="final-cta-side"><p>Simpan hasil sandbox, tambahkan identitas visualmu, lalu teruskan eksplorasi ke CSS dan JavaScript.</p><button className="outline-button" onClick={() => scrollTo("sandbox")}>Kembali ke sandbox <ArrowUpIcon /></button></div></section>

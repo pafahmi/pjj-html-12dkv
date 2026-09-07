@@ -76,3 +76,5 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 640px) { .login-shell { padding: 20px 15px; }.login-card { padding: 27px 22px 23px; }.login-brand { margin-bottom: 38px; }.student-chip { max-width: 34px; padding: 4px; border: 0; }.student-chip strong, .student-chip small { display: none; }.student-chip button { padding: 2px; }.topbar-actions { gap: 5px; } }
 
 .drive-button { display: inline-flex; align-items: center; gap: 7px; color: #b9bdc7; border: 1px solid #3a414d; background: #171b23; border-radius: 6px; padding: 9px 11px; font-size: 10px; font-weight: 700; text-decoration: none; }.drive-button:hover { color: #d5ff48; border-color: rgba(213,255,72,.45); background: rgba(213,255,72,.06); }
+
+.local-export-status { display: flex; align-items: flex-start; gap: 9px; border-top: 1px solid #303641; background: rgba(135,228,141,.06); color: #87e48d; padding: 12px 20px; font-size: 10px; line-height: 1.5; }.local-export-status span { display: grid; gap: 2px; }.local-export-status b { color: #b9f4bc; font-weight: 700; }.local-export-status small { color: #7f9d83; font: 9px 'DM Mono'; }
